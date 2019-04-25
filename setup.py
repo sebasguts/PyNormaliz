@@ -53,7 +53,7 @@ setup(
     py_modules = [ "PyNormaliz" ],
     ext_modules = [ Extension( "PyNormaliz_cpp",
                               [ "NormalizModule.cpp" ],
-                              libraries=[ 'arb', 'normaliz', 'gmp', 'flint', 'eanticxx' ],
+                              libraries=[ 'normaliz', 'gmp' ],
                               extra_compile_args=['-std=c++11'],
                               **extra_kwds) ],
     

@@ -69,6 +69,26 @@ typedef int py_size_t;
         return NULL;                                                         \
     }
 
+#define FUNC_END_NOSIGINT                                                             \
+    }                                                                        \
+    catch (libnormaliz::InterruptException & e)                              \
+    {                                                                        \
+        libnormaliz::nmz_interrupted = false;                                \
+        PyErr_SetInterrupt();                                                \
+        PyErr_CheckSignals();                                                \
+        return NULL;                                                         \
+    }                                                                        \
+    catch (libnormaliz::NormalizException & e)                               \
+    {                                                                        \
+        PyErr_SetString(NormalizError, e.what());                            \
+        return NULL;                                                         \
+    }                                                                        \
+    catch (exception & e)                                                    \
+    {                                                                        \
+        PyErr_SetString(PyNormaliz_cppError, e.what());                      \
+        return NULL;                                                         \
+    }
+
 
 class PyNormalizInputException: public std::exception {
 private:
@@ -117,7 +137,7 @@ static string cone_name_str_long(cone_name_long);
 static string cone_name_str_renf(cone_name_renf);
 
 
-static PyOS_sighandler_t current_interpreter_sigint_handler;
+// static PyOS_sighandler_t current_interpreter_sigint_handler;
 
 static PyObject* RationalHandler = NULL;
 
@@ -840,7 +860,7 @@ static PyObject* NmzListConeProperties(PyObject* args)
 
     return return_list;
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -852,6 +872,9 @@ static PyObject* NmzListConeProperties(PyObject* args)
 template < typename Integer >
 static PyObject* _NmzConeIntern(PyObject* args, PyObject* kwargs)
 {
+
+    return pack_cone((Cone< Integer >*) malloc(sizeof(void*)));
+
     map< InputType, vector< vector< mpq_class > > > input;
 
     PyObject* input_list;
@@ -1016,7 +1039,7 @@ static PyObject* _NmzConeIntern_renf(PyObject* args, PyObject* kwargs)
     PyObject* return_container = pack_cone(C, renf);
 
     return return_container;
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 #endif
 
@@ -1055,7 +1078,7 @@ PyObject* _NmzCone(PyObject* self, PyObject* args, PyObject* kwargs)
     }
 #endif
     return _NmzConeIntern< mpz_class >(args, kwargs);
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /*
@@ -1094,7 +1117,7 @@ PyObject* _NmzConeCopy(PyObject* self, PyObject* args)
     }
 #endif
     return Py_None;
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1125,23 +1148,24 @@ PyObject* NmzHilbertSeries(Cone< Integer >* C, PyObject* args)
     else {
         return NmzHilbertSeriesToPyList(C->getHilbertSeries(), false);
     }
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 
 PyObject* NmzHilbertSeries_Outer(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
 
     if (!is_cone(cone)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
         return NULL;
     }
 
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
     string current_name = string(PyCapsule_GetName(cone));
     if (cone_name_str == current_name) {
         Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
@@ -1221,22 +1245,24 @@ PyObject* _NmzCompute(Cone< Integer >* C, PyObject* args)
     // Cone.compute returns the not computed properties
     // we return a bool, true when everything requested was computed
     return notComputed.goals().none() ? Py_True : Py_False;
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 
 PyObject* _NmzCompute_Outer(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+    
     FUNC_BEGIN
 
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
 
     PyObject* cone = PyTuple_GetItem(args, 0);
 
     PyObject* result = Py_None;
 
     if (!is_cone(cone)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
         return NULL;
     }
@@ -1285,7 +1311,7 @@ PyObject* NmzIsComputed(Cone< Integer >* C, PyObject* prop)
 
     return C->isComputed(p) ? Py_True : Py_False;
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 PyObject* NmzIsComputed_Outer(PyObject* self, PyObject* args)
@@ -1316,7 +1342,7 @@ PyObject* NmzIsComputed_Outer(PyObject* self, PyObject* args)
 #endif
     return Py_False;
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1356,7 +1382,7 @@ PyObject* NmzSetGrading(PyObject* self, PyObject* args)
         Cone< long long >* cone_ptr = get_cone_long(cone);
         return NmzSetGrading_inner(cone_ptr, grading_py);
     }
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1395,17 +1421,20 @@ PyObject*
 _NmzResultImpl(Cone< Integer >* C, PyObject* prop_obj, void* nf = nullptr)
 {
 
+    return Py_True;
+
+    // PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+    FUNC_BEGIN
     string prop = PyUnicodeToString(prop_obj);
 
     libnormaliz::ConeProperty::Enum p = libnormaliz::toConeProperty(prop);
 
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
-    ConeProperties notComputed = C->compute(ConeProperties(p));
-    PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
+    // ConeProperties notComputed = C->compute(ConeProperties(p));
+    // PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
 
-    if (notComputed.goals().any()) {
-        return Py_None;
-    }
+    // if (notComputed.goals().any()) {
+    //     return Py_None;
+    // }
 
     // Handle standard cases
     libnormaliz::OutputType::Enum outputtype = libnormaliz::output_type(p);
@@ -1504,7 +1533,8 @@ _NmzResultImpl(Cone< Integer >* C, PyObject* prop_obj, void* nf = nullptr)
                 case libnormaliz::OutputType::MachineInteger:
                     return NmzToPyNumber(C->getMachineIntegerConeProperty(p));
                 case libnormaliz::OutputType::Bool:
-                    return BoolToPyBool(C->getBooleanConeProperty(p));
+                    return Py_True;
+                    // return BoolToPyBool(C->getBooleanConeProperty(p));
                 case libnormaliz::OutputType::Void: {
                     PyErr_SetString(PyNormaliz_cppError,
                                     "ConeProperty is input-only");
@@ -1519,66 +1549,22 @@ _NmzResultImpl(Cone< Integer >* C, PyObject* prop_obj, void* nf = nullptr)
         }
     }
     return Py_None;
+    FUNC_END_NOSIGINT
 }
 
 PyObject* _NmzResult(PyObject* self, PyObject* args, PyObject* kwargs)
 {
 
+    return Py_True;
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
     PyObject* prop = PyTuple_GetItem(args, 1);
+    
+    Cone< mpz_class >* cone_ptr = nullptr;
+    return  _NmzResultImpl(cone_ptr, prop);
 
-    if (!is_cone(cone)) {
-        PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
-        return NULL;
-    }
-
-    if (!string_check(prop)) {
-        PyErr_SetString(PyNormaliz_cppError,
-                        "Second argument must be a unicode string");
-        return NULL;
-    }
-
-    if (kwargs) {
-        RationalHandler = PyDict_GetItemString(kwargs, "RationalHandler");
-#ifdef ENFNORMALIZ
-        NumberfieldElementHandler =
-            PyDict_GetItemString(kwargs, "NumberfieldElementHandler");
-#endif
-        VectorHandler = PyDict_GetItemString(kwargs, "VectorHandler");
-        MatrixHandler = PyDict_GetItemString(kwargs, "MatrixHandler");
-    }
-
-    PyObject* result = Py_None;
-
-    if (cone_name_str == string(PyCapsule_GetName(cone))) {
-        Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
-        result = _NmzResultImpl(cone_ptr, prop);
-    }
-    else if (cone_name_str_long == string(PyCapsule_GetName(cone))) {
-        Cone< long long >* cone_ptr = get_cone_long(cone);
-        result = _NmzResultImpl(cone_ptr, prop);
-    }
-#ifdef ENFNORMALIZ
-    else {
-        Cone< renf_elem_class >* cone_ptr = get_cone_renf(cone);
-        result = _NmzResultImpl(
-            cone_ptr, prop,
-            reinterpret_cast< void* >(get_cone_renf_renf(cone)));
-    }
-#endif
-
-    RationalHandler = NULL;
-#ifdef ENFNORMALIZ
-    NumberfieldElementHandler = NULL;
-#endif
-    VectorHandler = NULL;
-    MatrixHandler = NULL;
-
-    return result;
-
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1597,7 +1583,7 @@ PyObject* NmzSetVerboseDefault(PyObject* self, PyObject* args)
         return NULL;
     }
     return BoolToPyBool(libnormaliz::setVerboseDefault(value == Py_True));
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 template < typename Integer >
@@ -1607,7 +1593,7 @@ PyObject* NmzSetVerbose(Cone< Integer >* C, PyObject* value)
     bool old_value;
     old_value = C->setVerbose(value == Py_True);
     return BoolToPyBool(old_value);
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 PyObject* NmzSetVerbose_Outer(PyObject* self, PyObject* args)
@@ -1644,7 +1630,7 @@ PyObject* NmzSetVerbose_Outer(PyObject* self, PyObject* args)
 #endif
     return Py_None;
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1656,16 +1642,17 @@ PyObject* NmzSetVerbose_Outer(PyObject* self, PyObject* args)
 PyObject* NmzGetPolynomial(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
 
     if (!is_cone(cone)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
         return NULL;
     }
-
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
 
     if (cone_name_str == string(PyCapsule_GetName(cone))) {
         Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
@@ -1724,13 +1711,12 @@ PyObject* NmzSetNrCoeffQuasiPol(PyObject* self, PyObject* args)
         return Py_True;
     }
     else {
-        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError,
                         "Cannot set quasi polynomial coeffs for renf cone");
         return NULL;
     }
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1742,6 +1728,8 @@ PyObject* NmzSetNrCoeffQuasiPol(PyObject* self, PyObject* args)
 PyObject* NmzSymmetrizedCone(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
@@ -1751,7 +1739,6 @@ PyObject* NmzSymmetrizedCone(PyObject* self, PyObject* args)
         return NULL;
     }
 
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
 
     if (cone_name_str == string(PyCapsule_GetName(cone))) {
         Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
@@ -1792,17 +1779,21 @@ PyObject* NmzSymmetrizedCone(PyObject* self, PyObject* args)
 PyObject* NmzGetHilbertSeriesExpansion(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
     PyObject* py_degree = PyTuple_GetItem(args, 1);
 
     if (!is_cone(cone)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
         return NULL;
     }
 
     if (!PyLong_Check(py_degree)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError,
                         "Second argument must be a long");
         return NULL;
@@ -1810,7 +1801,6 @@ PyObject* NmzGetHilbertSeriesExpansion(PyObject* self, PyObject* args)
 
     long                       degree = PyLong_AsLong(py_degree);
     libnormaliz::HilbertSeries HS;
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
 
     if (cone_name_str == string(PyCapsule_GetName(cone))) {
         Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
@@ -1841,17 +1831,21 @@ PyObject* NmzGetHilbertSeriesExpansion(PyObject* self, PyObject* args)
 PyObject* NmzGetWeightedEhrhartSeriesExpansion(PyObject* self, PyObject* args)
 {
 
+    PyOS_sighandler_t current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
+    
     FUNC_BEGIN
 
     PyObject* cone = PyTuple_GetItem(args, 0);
     PyObject* py_degree = PyTuple_GetItem(args, 1);
 
     if (!is_cone(cone)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError, "First argument must be a cone");
         return NULL;
     }
 
     if (!PyLong_Check(py_degree)) {
+        PyOS_setsig(SIGINT, current_interpreter_sigint_handler);
         PyErr_SetString(PyNormaliz_cppError,
                         "Second argument must be a long");
         return NULL;
@@ -1859,7 +1853,6 @@ PyObject* NmzGetWeightedEhrhartSeriesExpansion(PyObject* self, PyObject* args)
 
     long degree = PyLong_AsLong(py_degree);
     pair< libnormaliz::HilbertSeries, mpz_class > ES;
-    current_interpreter_sigint_handler = PyOS_setsig(SIGINT, signal_handler);
 
     if (cone_name_str == string(PyCapsule_GetName(cone))) {
         Cone< mpz_class >* cone_ptr = get_cone_mpz(cone);
@@ -1911,7 +1904,7 @@ PyObject* NmzSetNumberOfNormalizThreads(PyObject* self, PyObject* args)
 
     return PyLong_FromLong(num_threads_long);
 
-    FUNC_END
+    FUNC_END_NOSIGINT
 }
 
 /***************************************************************************
@@ -1954,44 +1947,9 @@ static PyObject* error_out(PyObject* m)
 }
 
 static PyMethodDef PyNormaliz_cppMethods[] = {
-    {"error_out", (PyCFunction)error_out, METH_NOARGS, NULL},
-    {"NmzCone", (PyCFunction)_NmzCone, METH_VARARGS | METH_KEYWORDS,
-     "Create a cone"},
-    {"NmzConeCopy", (PyCFunction)_NmzConeCopy, METH_VARARGS,
-     "Copy an existing cone"},
-    {"NmzCompute", (PyCFunction)_NmzCompute_Outer, METH_VARARGS,
-     "Compute some stuff"},
-    {"NmzIsComputed", (PyCFunction)NmzIsComputed_Outer, METH_VARARGS,
-     "Check if property is computed "},
-    {"NmzSetGrading", (PyCFunction)NmzSetGrading, METH_VARARGS,
-     "Reset the grading of a cone"},
+   
     {"NmzResult", (PyCFunction)_NmzResult, METH_VARARGS | METH_KEYWORDS,
      "Return cone property"},
-    {"NmzSetVerboseDefault", (PyCFunction)NmzSetVerboseDefault, METH_VARARGS,
-     "Set verbosity"},
-    {"NmzSetVerbose", (PyCFunction)NmzSetVerbose_Outer, METH_VARARGS,
-     "Set verbosity of cone"},
-    {"NmzListConeProperties", (PyCFunction)NmzListConeProperties, METH_NOARGS,
-     "List all available properties"},
-    {"NmzHilbertSeries", (PyCFunction)NmzHilbertSeries_Outer, METH_VARARGS,
-     "Returns Hilbert series, either HSOP or not"},
-    {"NmzGetPolynomial", (PyCFunction)NmzGetPolynomial, METH_VARARGS,
-     "Returns grading polynomial"},
-    {"NmzSymmetrizedCone", (PyCFunction)NmzSymmetrizedCone, METH_VARARGS,
-     "Returns symmetrized cone"},
-    {"NmzSetNumberOfNormalizThreads",
-     (PyCFunction)NmzSetNumberOfNormalizThreads, METH_VARARGS,
-     "Sets the Normaliz thread limit"},
-    {"NmzSetNrCoeffQuasiPol", (PyCFunction)NmzSetNrCoeffQuasiPol,
-     METH_VARARGS, "Sets the period bound for the quasi-polynomial"},
-    {"NmzGetHilbertSeriesExpansion",
-     (PyCFunction)NmzGetHilbertSeriesExpansion, METH_VARARGS,
-     "Returns expansion of the hilbert series"},
-    {"NmzGetWeightedEhrhartSeriesExpansion",
-     (PyCFunction)NmzGetWeightedEhrhartSeriesExpansion, METH_VARARGS,
-     "Returns expansion of the weighted Ehrhart series"},
-    {"NmzHasEAntic", (PyCFunction)NmzHasEAntic, METH_NOARGS,
-     "Returns true if (Py)Normaliz was compiled with e-antic support"},
     {
         NULL,
     } /* Sentinel */
@@ -2002,13 +1960,17 @@ static PyMethodDef PyNormaliz_cppMethods[] = {
 
 static int PyNormaliz_cpp_traverse(PyObject* m, visitproc visit, void* arg)
 {
-    Py_VISIT(GETSTATE(m)->error);
+    // Py_VISIT(GETSTATE(m)->error);
+    // Py_VISIT(NormalizError);
+    // Py_VISIT(PyNormaliz_cppError);
     return 0;
 }
 
 static int PyNormaliz_cpp_clear(PyObject* m)
 {
-    Py_CLEAR(GETSTATE(m)->error);
+    // Py_CLEAR(GETSTATE(m)->error);
+    // Py_DecRef(NormalizError);
+    // Py_DecRef(PyNormaliz_cppError);
     return 0;
 }
 
@@ -2038,24 +2000,23 @@ extern "C" void initPyNormaliz_cpp(void)
         INITERROR;
     struct module_state* st = GETSTATE(module);
 
-    st->error = PyErr_NewException(
-        const_cast< char* >("PyNormaliz_cpp.INITError"), NULL, NULL);
-    if (st->error == NULL) {
-        Py_DECREF(module);
-        INITERROR;
-    }
+    st->error = NULL;
+    // if (st->error == NULL) {
+    //     Py_DECREF(module);
+    //     INITERROR;
+    // }
 
-    NormalizError =
-        PyErr_NewException(const_cast< char* >("PyNormaliz_cpp.NormalizError"), NULL, NULL);
-    Py_INCREF(NormalizError);
-    PyNormaliz_cppError = PyErr_NewException(
-        const_cast< char* >("PyNormaliz_cpp.NormalizInterfaceError"), NULL, NULL);
-    Py_INCREF(PyNormaliz_cppError);
+    // NormalizError =
+    //     PyErr_NewException(const_cast< char* >("PyNormaliz_cpp.NormalizError"), NULL, NULL);
+    // Py_INCREF(NormalizError);
+    // PyNormaliz_cppError = PyErr_NewException(
+    //     const_cast< char* >("PyNormaliz_cpp.NormalizInterfaceError"), NULL, NULL);
+    // Py_INCREF(PyNormaliz_cppError);
 
-    PyModule_AddObject(module, "normaliz_error", NormalizError);
-    PyModule_AddObject(module, "pynormaliz_error", PyNormaliz_cppError);
+    // PyModule_AddObject(module, "normaliz_error", NormalizError);
+    // PyModule_AddObject(module, "pynormaliz_error", PyNormaliz_cppError);
 
-    current_interpreter_sigint_handler = PyOS_getsig(SIGINT);
+    // current_interpreter_sigint_handler = PyOS_getsig(SIGINT);
 
 #if PY_MAJOR_VERSION >= 3
     return module;
